@@ -11,6 +11,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from backend.app.database import SessionLocal, engine, Base
 from backend.app.models.user import User
+from backend.app.models.synthetic import TestRun
 from backend.app.core.security import hash_password
 from backend.app.services.document_service import document_service
 from backend.app.services.synthetic_runner import synthetic_runner
@@ -101,6 +102,40 @@ def main():
             except Exception as e:
                 # Document may already be indexed
                 pass
+
+        # 4. Seed Initial Completed Runs for Comparison View (Pre-Fix vs Post-Fix)
+        existing_runs = db.query(TestRun).count()
+        if existing_runs < 2:
+            print(" - Seeding initial comparison runs for side-by-side analysis...")
+            if admin_id:
+                # Pre-fix run with stale index leaks
+                r_fault = TestRun(
+                    name="Benchmark: Pre-Fix (Stale Vector Index)",
+                    user_id=admin_id,
+                    status="queued",
+                    fault_mode="stale_index",
+                    answer_mode="local_extractive",
+                    retrieval_mode="vector_and_lexical",
+                    is_guided_demo=True
+                )
+                db.add(r_fault)
+                db.commit()
+                synthetic_runner.run_suite(db, r_fault.id)
+
+                # Post-fix secure baseline run
+                r_sec = TestRun(
+                    name="Benchmark: Post-Fix (Secure Baseline)",
+                    user_id=admin_id,
+                    status="queued",
+                    fault_mode="secure_baseline",
+                    answer_mode="local_extractive",
+                    retrieval_mode="vector_and_lexical",
+                    is_guided_demo=True
+                )
+                db.add(r_sec)
+                db.commit()
+                synthetic_runner.run_suite(db, r_sec.id)
+                print(f" - Comparison runs ready: {r_fault.name} ({r_fault.leaked_count} leaks) vs {r_sec.name} ({r_sec.leaked_count} leaks)")
 
         print("[Seed] Seeding completed successfully.")
     finally:

@@ -138,6 +138,52 @@ def create_test_run(
 
     return _format_run_response(new_run, include_probes=False)
 
+@router.post("/runs/demo-pair")
+def create_demo_comparison_pair(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(["admin", "auditor"]))
+):
+    """
+    Generates a pre-configured comparison pair (Pre-Fix Stale Index vs Post-Fix Secure Baseline)
+    for immediate side-by-side evaluation in the Compare Runs view.
+    """
+    synthetic_runner.ensure_fixtures_seeded(db)
+
+    # 1. Create Pre-fix faulty run
+    r_fault = TestRun(
+        name=f"Demo Benchmark: Pre-Fix (Stale Index)",
+        user_id=current_user.id,
+        status="queued",
+        fault_mode="stale_index",
+        answer_mode="local_extractive",
+        retrieval_mode="vector_and_lexical",
+        is_guided_demo=True
+    )
+    db.add(r_fault)
+    db.commit()
+    synthetic_runner.run_suite(db, r_fault.id)
+
+    # 2. Create Post-fix secure baseline run
+    r_sec = TestRun(
+        name=f"Demo Benchmark: Post-Fix (Secure Baseline)",
+        user_id=current_user.id,
+        status="queued",
+        fault_mode="secure_baseline",
+        answer_mode="local_extractive",
+        retrieval_mode="vector_and_lexical",
+        is_guided_demo=True
+    )
+    db.add(r_sec)
+    db.commit()
+    synthetic_runner.run_suite(db, r_sec.id)
+
+    return {
+        "faulty_id": r_fault.id,
+        "secure_id": r_sec.id,
+        "faulty_name": r_fault.name,
+        "secure_name": r_sec.name
+    }
+
 @router.get("/runs/{run_id}", response_model=TestRunResponse)
 def get_run_detail(
     run_id: str,

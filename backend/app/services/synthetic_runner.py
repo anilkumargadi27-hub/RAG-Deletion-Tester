@@ -238,17 +238,22 @@ class SyntheticRunnerService:
                 return probes_executed, scenario_latency
 
             # 3. Prime Cache and Conversation Memory
-            # Store in cache
-            cache_service.store_cached_answer(
-                db=db,
-                query=sc.baseline_question,
-                scope=scope,
-                principal_id=target_principal,
-                answer_mode=run.answer_mode,
-                answer_text=base_ans,
-                citations=base_cites,
-                source_docs=[doc]
-            )
+            # Store in cache for all anticipated query variants so cache fault simulates realistic retention
+            direct_q = json.loads(sc.direct_questions_json)[0]
+            para_q = json.loads(sc.paraphrased_questions_json)[0]
+            ctrl_q = sc.positive_control_question
+
+            for q_to_prime in [sc.baseline_question, direct_q, para_q]:
+                cache_service.store_cached_answer(
+                    db=db,
+                    query=q_to_prime,
+                    scope=scope,
+                    principal_id=target_principal,
+                    answer_mode=run.answer_mode,
+                    answer_text=base_ans,
+                    citations=base_cites,
+                    source_docs=[doc]
+                )
             # Create session and message
             test_sess = ConversationSession(
                 user_id=run.user_id,
@@ -300,9 +305,6 @@ class SyntheticRunnerService:
                     session_service.invalidate_by_document(db, doc.id, principal_id=target_principal)
 
             # 5. Execute Post-Mutation Probes
-            direct_q = json.loads(sc.direct_questions_json)[0]
-            para_q = json.loads(sc.paraphrased_questions_json)[0]
-            ctrl_q = sc.positive_control_question
 
             # Probe A: Direct Probe as unauthorized/revoked principal
             p_a_res, p_a_lat = self._run_single_probe(
@@ -419,7 +421,7 @@ class SyntheticRunnerService:
             contributed_layers.append("cache")
             ans_text = cached_result["answer_text"]
             ans_citations = cached_result["citations"]
-        elif mem_messages and fault_memory and any(sc.canary_string in m.content for m in mem_messages):
+        elif mem_messages and fault_memory and any((sc.canary_string in m.content or sc.protected_fact.lower() in m.content.lower()) for m in mem_messages):
             # Retained memory disclosure
             ans_text = f"[From prior conversation context]: {mem_messages[-1].content}"
             ans_citations = []

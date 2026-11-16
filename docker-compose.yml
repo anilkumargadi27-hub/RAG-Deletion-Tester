@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  forgetcheck:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: forgetcheck-app
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DATA_DIR=/var/data
+      - PORT=8000
+      - SECRET_KEY=forgetcheck-local-docker-secret-change-me
+      - INITIAL_ADMIN_USERNAME=admin
+      - INITIAL_ADMIN_PASSWORD=Admin@ForgetCheck2026!
+      # Optional: Provide GEMINI_API_KEY to test Live Gemini Mode
+      # - GEMINI_API_KEY=your_key_here
+    volumes:
+      - forgetcheck_data:/var/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  forgetcheck_data:
+    driver: local

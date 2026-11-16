@@ -1,0 +1,44 @@
+# ForgetCheck .gitignore
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Databases and Local Storage
+data/
+*.sqlite
+*.sqlite3
+*.db
+chroma_data/
+uploads/
+reports/
+
+# Environment and Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Playwright
+test-results/
+playwright-report/
+
+# OS and IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

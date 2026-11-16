@@ -9,9 +9,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from backend.app.config import settings, BASE_DIR
 from backend.app.database import engine, SessionLocal, Base
 from backend.app.models.user import User
+from backend.app.models.document import Document
+from backend.app.models.synthetic import TestRun
 from backend.app.core.security import hash_password, verify_csrf
 from backend.app.services.worker import worker
 from backend.app.services.synthetic_runner import synthetic_runner
+from backend.app.services.document_service import document_service
 
 from backend.app.api.health import router as health_router
 from backend.app.api.auth import router as auth_router
@@ -21,27 +24,91 @@ from backend.app.api.synthetic import router as synthetic_router
 from backend.app.api.reports import router as reports_router
 from backend.app.api.admin import router as admin_router
 
+def ensure_startup_data(db):
+    # 1. Seed or synchronize all 3 demo accounts
+    accounts = [
+        ("admin", "admin@forgetcheck.local", settings.INITIAL_ADMIN_PASSWORD, "admin"),
+        ("auditor", "auditor@forgetcheck.local", "Auditor@ForgetCheck2026!", "auditor"),
+        ("member", "member@forgetcheck.local", "Member@ForgetCheck2026!", "member")
+    ]
+    for uname, email, pwd, role in accounts:
+        u = db.query(User).filter(User.username == uname).first()
+        if not u:
+            u = User(
+                username=uname,
+                email=email,
+                hashed_password=hash_password(pwd),
+                role=role,
+                is_active=True
+            )
+            db.add(u)
+        else:
+            u.hashed_password = hash_password(pwd)
+            u.is_active = True
+    db.commit()
+
+    # 2. Seed synthetic scenario fixtures
+    synthetic_runner.ensure_fixtures_seeded(db)
+
+    # 3. Seed demo documents if empty
+    if db.query(Document).count() == 0:
+        admin_user = db.query(User).filter(User.username == "admin").first()
+        admin_id = admin_user.id if admin_user else None
+        sample_docs = [
+            (
+                "Employee Handbook & Wellness Benefits 2026",
+                "HR",
+                (
+                    "All full-time employees are provided CarePlus Platinum health insurance coverage. "
+                    "Annual wellness stipends of $600 are available for fitness memberships and mental health apps. "
+                    "Flexible working hours operate between 8:00 AM and 7:00 PM local time. "
+                    "Parental leave provides 16 weeks of fully paid leave for all eligible caregivers."
+                ),
+                ["general_employee", "hr_manager", "admin"]
+            ),
+            (
+                "Corporate Travel and Expense Reimbursement Guidelines",
+                "Finance",
+                (
+                    "Business travel expenses must be pre-approved by your department manager. "
+                    "Domestic daily meal per diem is capped at $85 per day. "
+                    "Expense reports must be filed within 30 days of trip conclusion via the finance portal. "
+                    "First-class air travel is strictly restricted to flights exceeding 8 continuous hours."
+                ),
+                ["general_employee", "finance_team", "admin"]
+            ),
+            (
+                "Engineering Architecture & API Security Standards",
+                "Engineering",
+                (
+                    "All production services must authenticate using mTLS with short-lived certificates. "
+                    "Database access must use connection pooling with TLS 1.3 encryption in transit. "
+                    "API rate limiting defaults to 100 requests per minute per IP for unauthenticated traffic "
+                    "and 1,000 requests per minute for authenticated API tokens."
+                ),
+                ["engineering_lead", "devops_team", "admin"]
+            )
+        ]
+        for title, dept, text, principals in sample_docs:
+            try:
+                document_service.ingest_document(
+                    db=db,
+                    title=title,
+                    department=dept,
+                    raw_text=text,
+                    permitted_principals=principals,
+                    uploader_id=admin_id
+                )
+            except Exception:
+                pass
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize tables and seed initial admin
+    # Startup: Initialize tables and seed all default accounts & fixtures
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        # Seed initial admin if not existing
-        admin = db.query(User).filter(User.username == settings.INITIAL_ADMIN_USERNAME).first()
-        if not admin:
-            admin = User(
-                username=settings.INITIAL_ADMIN_USERNAME,
-                email="admin@forgetcheck.local",
-                hashed_password=hash_password(settings.INITIAL_ADMIN_PASSWORD),
-                role="admin",
-                is_active=True
-            )
-            db.add(admin)
-            db.commit()
-
-        # Seed synthetic fixtures
-        synthetic_runner.ensure_fixtures_seeded(db)
+        ensure_startup_data(db)
     finally:
         db.close()
 
@@ -68,7 +135,9 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
+        "https://forgetcheck.onrender.com",
     ],
+    allow_origin_regex=r"https://.*\.onrender\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -19,6 +19,6 @@ services:
       - key: INITIAL_ADMIN_USERNAME
         value: admin
       - key: INITIAL_ADMIN_PASSWORD
-        generateValue: true
+        value: Admin@ForgetCheck2026!
       - key: GEMINI_API_KEY
         sync: false
